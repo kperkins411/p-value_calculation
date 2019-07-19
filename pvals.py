@@ -1,15 +1,17 @@
 '''
 Calculates the p-values using bootstrapping and random forest
 '''
-
-from pandas_summary import DataFrameSummary
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.ensemble import RandomForestRegressor
-from IPython.display import display
-from sklearn import metrics
 import numpy as np
 
+#this directory contains symlink created at command line like this
+# ln -s ../Marginal_Effects_at_Means ./Marginal_Effects_at_Means
+#it allows this directory to find Marginal_Effects_at_Means, a directory 1 above this one
+#this dir contains a file called mem.py which contains MEMs
+from MEM.mem import MEMs
+
 #random forest params
+NUMB_ITERATIONS=50
 NUMB_ESTIMATORS=100
 MIN_SAMPLES_LEAF=10
 
@@ -21,7 +23,7 @@ class pValInfo():
 
     def __init__(self, col):
         """
-        param cpol: column we are operating on
+        param col: column we are operating on
         """
         self.col = col
         self.correct_pred = []
@@ -33,83 +35,83 @@ class pValInfo():
         non permuted pred
         '''
         # if either of the above are empty throws exception
-        n = sum(i > self.col for i in self.permuted_preds)
-        return (n / len(self.permuted_preds))
+        n = sum(i > self.correct_pred for i in self.permuted_preds)
+        val= (n / len(self.permuted_preds)).item(0)
 
-def get_all_pvals(all_columns, trn, trn_y, tst, numb_iter):
-    '''
-    Get all the column p-values
-    :param all_columns:
-    :param trn:
-    :param trn_y:
-    :param tst:
-    :param numb_iter:
-    :return:
-    '''
-    res = []
-    for col in all_columns:
-        res.append(get_col_pval(col, trn, trn_y, tst, numb_iter))
+        #cheesy but it doesn't matter if they are all above or below
+        val=val if val<0.5 else (1-val)
+        return val
 
-def get_col_pval(col, trn, trn_y, tst, numb_iter):
-    '''
-    Get a single columns p-value
-    :param col: the column we are operating on
-    :param trn:
-    :param trn_y:
-    :param tst:
-    :param numb_iter:  how many AMEs to generate on permuted data, used to produce prediction normal distribution
-    :return: numbiter AME calcs
-    '''
-    val = pValInfo()    #holder
-    val.correct_preds = get_AME(col, trn, trn_y, tst, numb_iter=numb_iter)
 
-    #permute column
-    cpy=trn[col].copy() #save for later
-    trn[col]=np.random.permutation(trn[col].values)
+class pValue():
+    def __init__(self,trn,trn_y, all_columns, numb_iter = NUMB_ITERATIONS,verbose=False):
+        '''
+        :param trn: dataframe to operate on
+        :param trn_y: correct classes for above dataframe
+        :param all_columns: all the columns in trn to calculate the pVals for
+        :param numb_iter:  number of times to create rf out of permuted data in trn
+        '''
+        self.trn=trn.copy()
+        self.trn_y= trn_y.copy()
+        self.numb_iter=numb_iter
+        self.all_columns=all_columns
+        self.mem = MEMs(self.trn)
+        self.res=[]
+        self.verbose = verbose
 
-    val.permuted_preds = get_AME(col, trn, trn_y, tst, numb_iter=numb_iter)
+    def get_all_pvals(self):
+        '''
+        Get all the column p-values
+        :return: list of pValInfo objects
+        '''
+        self.res.clear()
+        for col in self.all_columns:
+            trncpy = self.trn.copy()
+            self.res.append(self._get_col_pval(col, trncpy))
+        return self.res
 
-    #replace permuted column
-    trn[col] = cpy
+    def _get_col_pval(self,col, trn_tmp):
+        '''
+        Get a single columns p-value
+        :param col: the column we are operating on
+        :return: numbiter MEM calcs
+        '''
+        val = pValInfo(col)    #holderS
 
-    return val
+        #get correct prediction on unpermuted data
+        val.correct_pred = self._get_MEM(col,trn_tmp,numb_iter=1)
 
-def get_AME(col, trn, trn_y, tst, numb_iter):
-    '''
-     Returns numb_iter AME calculations
-    :param col: the column we are operating on
-    :param trn:
-    :param trn_y:
-    :param tst:
-    :param numb_iter:  how many AMEs to generate on permuted data, used to produce prediction normal distribution
-    :return: numbiter AME calcs
-    '''
-    res = []
-    for _ in range(numb_iter):
-        # create and train a random forest object
-        m_rf = RandomForestClassifier(n_estimators=NUMB_ESTIMATORS, n_jobs=-1, oob_score=True, max_features='auto',
-                                      min_samples_leaf=MIN_SAMPLES_LEAF, verbose=False);
-        _ = m_rf.fit(trn, trn_y)
+        #permute column, then get self.numb_iter permuted predictions
+        trn_tmp[col]=np.random.permutation(trn_tmp[col].values)
+        val.permuted_preds = self._get_MEM(col, trn_tmp, numb_iter=self.numb_iter)
 
-        #get probabilities on test set
-        prob_orig = ((m_rf.predict_proba(tst))[:,0]).sum()/len(tst)
+        return val
 
-        #now lets jump by 1 std dev up (or toggle if binary)
-        tst1 = tst.copy()
+    def _get_MEM(self,col,trn_tmp, numb_iter):
+        '''
+         Returns numb_iter MEM calculations
+        :param col: the column we are operating on
+        :param trn_tmp:
+        :param numb_iter:  how many MEM to generate on permuted data, used to produce prediction normal distribution
+        :return: numbiter MEM calcs
+        '''
+        res = []
+        cnt=0
+        for _ in range(numb_iter):
+            # create and train a random forest object
+            m_rf = RandomForestClassifier(n_estimators=NUMB_ESTIMATORS, n_jobs=-1, oob_score=True, max_features='auto',
+                                          min_samples_leaf=MIN_SAMPLES_LEAF, verbose=False);
+            _ = m_rf.fit(trn_tmp, self.trn_y)
 
-        if tst1[col].nunique() == 2:
-            min = tst1[col].min()
-            max = tst1[col].max()
+            prob_change = self.mem.getMEM_avgplusoneSimple_Probability_Change(m_rf, col)
+            res.append(prob_change)
 
-            tst1[col].apply(lambda x: min if x == max else max)
-        else:
-            tst1[col] += 1
-
-        prob_new = ((m_rf.predict_proba(tst1))[:,0]).sum()/len(tst1)
-
-        res.append(prob_new - prob_orig)
-
-    return res
+            cnt=(cnt+1)%10
+            if (cnt==0):
+                # if(self.verbose): print(f'Prob change={prob_change}')
+                print(".",end='',flush=True)
+        print()
+        return res
 
 
 
