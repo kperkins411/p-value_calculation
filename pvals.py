@@ -28,19 +28,28 @@ class pValInfo():
         self.col = col
         self.correct_pred = []
         self.permuted_preds = []
+        self.pval=None
 
     def get_pval(self):
         '''
-        returns the percentage of values in the permuted preds that are larger than the
+        lazy returns the percentage of values in the permuted preds that are larger than the
         non permuted pred
         '''
-        # if either of the above are empty throws exception
-        n = sum(i > self.correct_pred for i in self.permuted_preds)
-        val= (n / len(self.permuted_preds)).item(0)
+        if self.pval is None:#lazy evaluation    
+            # if either of the above are empty throws exception
+            n = sum(i > self.correct_pred for i in self.permuted_preds)
+            val= (n / len(self.permuted_preds)).item(0)
 
-        #cheesy but it doesn't matter if they are all above or below
-        val=val if val<0.5 else (1-val)
-        return val
+            #cheesy but it doesn't matter if they are all above or below
+            self.pval=val if val<0.5 else (1-val)
+        return self.pval
+    
+    #these are needed for sorting
+    def __eq__(self, other):
+        return self.col == other.col #TODO should verify that correct_pred and permuted+preds are almost equal too
+    
+    def __lt__(self, other):
+        return self.get_pval() < other.get_pval()
 
 
 class pValue():
@@ -67,6 +76,7 @@ class pValue():
         self.res.clear()
         for col in self.all_columns:
             trncpy = self.trn.copy()
+            print(f'Column {col}')
             self.res.append(self._get_col_pval(col, trncpy))
         return self.res
 
