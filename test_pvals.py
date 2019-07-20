@@ -2,9 +2,9 @@ from unittest import TestCase
 import pandas as pd
 from numpy.random import randint
 import numpy as np
-from MEM.mem import MEMs
+from Marginal_Effects_at_Means.mem import MEMs
 import random
-from pvals import pValue
+from p_value_calculation.pvals import pValue
 import matplotlib.pyplot as plt
 
 NUMB_ROWS=1000

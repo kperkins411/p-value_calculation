@@ -8,10 +8,10 @@ import numpy as np
 # ln -s ../Marginal_Effects_at_Means ./Marginal_Effects_at_Means
 #it allows this directory to find Marginal_Effects_at_Means, a directory 1 above this one
 #this dir contains a file called mem.py which contains MEMs
-from MEM.mem import MEMs
+from Marginal_Effects_at_Means.mem import MEMs
 
 #random forest params
-NUMB_ITERATIONS=50
+NUMB_ITERATIONS=500
 NUMB_ESTIMATORS=100
 MIN_SAMPLES_LEAF=10
 
